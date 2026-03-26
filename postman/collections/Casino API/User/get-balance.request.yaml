@@ -1,0 +1,10 @@
+$kind: http-request
+name: Get Balance
+method: GET
+url: '{{baseUrl}}/api/user/balance'
+order: 1000
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{token}}'

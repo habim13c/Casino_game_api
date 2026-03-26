@@ -1,0 +1,19 @@
+$kind: http-request
+name: Deposit
+method: POST
+url: '{{baseUrl}}/api/user/deposit'
+order: 2000
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "amount": 100
+    }

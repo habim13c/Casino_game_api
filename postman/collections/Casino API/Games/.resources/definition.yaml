@@ -1,0 +1,11 @@
+$kind: collection
+description: |-
+  Games endpoints — all protected by Bearer JWT auth.
+  Includes Slot Machine and Roulette bet endpoints.
+  Requires {{token}} to be set (run Login first).
+order: 3000
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{token}}'

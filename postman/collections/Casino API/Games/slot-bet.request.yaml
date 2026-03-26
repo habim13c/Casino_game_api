@@ -1,0 +1,19 @@
+$kind: http-request
+name: 'Slot - Place Bet'
+method: POST
+url: '{{baseUrl}}/api/games/slot/bet'
+order: 1000
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{token}}'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "betAmount": 10
+    }

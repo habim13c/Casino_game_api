@@ -1,0 +1,10 @@
+$kind: collection
+description: |-
+  User account endpoints — all protected by Bearer JWT auth.
+  Requires {{token}} to be set (run Login first).
+order: 2000
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{token}}'

@@ -1,0 +1,5 @@
+$kind: collection
+description: |-
+  Authentication endpoints — register a new user and log in to receive a JWT token.
+  The Login request automatically saves the returned token to {{token}}.
+order: 1000

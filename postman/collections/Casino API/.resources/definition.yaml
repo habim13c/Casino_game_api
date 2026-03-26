@@ -1,0 +1,13 @@
+$kind: collection
+name: Casino API
+description: |-
+  REST API for the Casino games backend (slots & roulette).
+  Base URL and auth token are stored in the environment variables.
+  Protected routes require a Bearer JWT token obtained from POST /api/auth/login.
+variables:
+  - key: baseUrl
+    value: 'http://localhost:3000'
+    description: Base URL of the Casino API server (PORT defaults to 3000)
+  - key: token
+    value: ''
+    description: JWT Bearer token obtained after login
