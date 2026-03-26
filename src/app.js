@@ -21,6 +21,9 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('combined'));
 
+// Serve static assets (images, icons) to the frontend
+app.use('/assets', express.static('public/assets'));
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
