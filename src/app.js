@@ -12,6 +12,14 @@ const authController = require('./controllers/authController');
 const userController = require('./controllers/userController');
 const slotController = require('./controllers/slotController');
 const rouletteController = require('./controllers/rouletteController');
+const blackjackController = require('./controllers/blackjackController');
+const diceController = require('./controllers/diceController');
+const coinFlipController = require('./controllers/coinFlipController');
+const minesController = require('./controllers/minesController');
+const crashController = require('./controllers/crashController');
+const plinkoController = require('./controllers/plinkoController');
+const hiloController = require('./controllers/hiloController');
+const baccaratController = require('./controllers/baccaratController');
 
 const app = express();
 
@@ -41,11 +49,18 @@ app.get('/api/user/balance', userController.getBalance);
 app.post('/api/user/deposit', userController.deposit);
 app.post('/api/user/withdraw', userController.withdraw);
 
-app.use('/api/games/slot', authMiddleware);
+// Game routes (all protected)
+app.use('/api/games', authMiddleware);
 app.post('/api/games/slot/bet', slotController.play);
-
-app.use('/api/games/roulette', authMiddleware);
 app.post('/api/games/roulette/bet', rouletteController.play);
+app.post('/api/games/blackjack/bet', blackjackController.play);
+app.post('/api/games/dice/bet', diceController.play);
+app.post('/api/games/coinflip/bet', coinFlipController.play);
+app.post('/api/games/mines/bet', minesController.play);
+app.post('/api/games/crash/bet', crashController.play);
+app.post('/api/games/plinko/bet', plinkoController.play);
+app.post('/api/games/hilo/bet', hiloController.play);
+app.post('/api/games/baccarat/bet', baccaratController.play);
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
