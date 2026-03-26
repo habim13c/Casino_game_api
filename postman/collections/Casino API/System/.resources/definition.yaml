@@ -1,0 +1,4 @@
+$kind: collection
+description: |-
+  System / utility endpoints — no auth required.
+order: 4000

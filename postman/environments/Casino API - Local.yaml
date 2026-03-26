@@ -1,0 +1,14 @@
+name: Casino API - Local
+values:
+  - key: baseUrl
+    value: 'http://localhost:3000'
+    enabled: true
+    type: default
+  - key: token
+    value: ''
+    enabled: true
+    type: default
+  - key: JWT_SECRET
+    value: ''
+    enabled: true
+    type: default

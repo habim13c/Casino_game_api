@@ -17,3 +17,16 @@ body:
     {
       "amount": 100
     }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200", () => pm.response.to.have.status(200));
+      const json = pm.response.json();
+      pm.test("Balance updated correctly", () => {
+        const previousBalance = pm.collectionVariables.get("balance") || 0;
+        const depositAmount = JSON.parse(pm.request.body.raw).amount;
+        pm.expect(Math.floor(json.balance)).to.eql(Math.floor(previousBalance + depositAmount));
+        pm.collectionVariables.set("balance", json.balance);
+      });
+      postman.setNextRequest("Slot - Place Bet");

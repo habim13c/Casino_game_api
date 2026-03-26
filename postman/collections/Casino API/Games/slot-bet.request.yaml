@@ -17,3 +17,17 @@ body:
     {
       "betAmount": 10
     }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200", () => pm.response.to.have.status(200));
+      const json = pm.response.json();
+      pm.test("Balance updated correctly after bet", () => {
+        const previousBalance = pm.collectionVariables.get("balance") || 0;
+        const betAmount = JSON.parse(pm.request.body.raw).betAmount;
+        const expectedBalance = previousBalance - betAmount + json.winAmount;
+        pm.expect(Math.floor(json.balance)).to.eql(Math.floor(expectedBalance));
+        pm.collectionVariables.set("balance", json.balance);
+      });
+      postman.setNextRequest("Roulette - Place Bet");

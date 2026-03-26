@@ -10,7 +10,7 @@ body:
   type: json
   content: |-
     {
-      "email": "user@example.com",
+      "email": "{{randomEmail}}",
       "password": "password123"
     }
 scripts:
@@ -22,3 +22,6 @@ scripts:
         pm.environment.set("token", json.token);
         pm.collectionVariables.set("token", json.token);
       }
+      pm.test("Status is 200", () => pm.response.to.have.status(200));
+      pm.collectionVariables.set("balance", 0);
+      postman.setNextRequest("Deposit");

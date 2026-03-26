@@ -8,3 +8,16 @@ auth:
   credentials:
     - key: token
       value: '{{token}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200", () => pm.response.to.have.status(200));
+      const json = pm.response.json();
+      pm.test("Balance matches tracked balance", () => {
+        const expectedBalance = pm.collectionVariables.get("balance");
+        if (expectedBalance !== undefined) {
+          pm.expect(Math.floor(json.balance)).to.eql(Math.floor(expectedBalance));
+        }
+      });
+      postman.setNextRequest(null);

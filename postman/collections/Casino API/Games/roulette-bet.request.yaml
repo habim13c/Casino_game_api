@@ -1,8 +1,8 @@
 $kind: http-request
-name: Withdraw
+name: 'Roulette - Place Bet'
 method: POST
-url: '{{baseUrl}}/api/user/withdraw'
-order: 3000
+url: '{{baseUrl}}/api/games/roulette/bet'
+order: 2000
 auth:
   type: bearer
   credentials:
@@ -15,7 +15,9 @@ body:
   type: json
   content: |-
     {
-      "amount": 50
+      "betAmount": 10,
+      "betType": "color",
+      "value": "red"
     }
 scripts:
   - type: afterResponse
@@ -23,9 +25,11 @@ scripts:
     code: |-
       pm.test("Status is 200", () => pm.response.to.have.status(200));
       const json = pm.response.json();
-      pm.test("Balance updated correctly", () => {
+      pm.test("Balance updated correctly after bet", () => {
         const previousBalance = pm.collectionVariables.get("balance") || 0;
-        const withdrawAmount = JSON.parse(pm.request.body.raw).amount;
-        pm.expect(Math.floor(json.balance)).to.eql(Math.floor(previousBalance - withdrawAmount));
+        const betAmount = JSON.parse(pm.request.body.raw).betAmount;
+        const expectedBalance = previousBalance - betAmount + json.winAmount;
+        pm.expect(Math.floor(json.balance)).to.eql(Math.floor(expectedBalance));
         pm.collectionVariables.set("balance", json.balance);
       });
+      postman.setNextRequest("Get Balance");
