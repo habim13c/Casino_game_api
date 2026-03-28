@@ -10,73 +10,68 @@ Build a complete, production-ready casino backend system with a full game engine
 - **Auth**: JWT (access + refresh tokens)
 - **Design**: Neon dark theme ("Electric & Neon" archetype)
 
-## User Personas
-1. **Player**: Registers, deposits, plays games, withdraws winnings
-2. **Admin/Super-Admin**: Manages users, games, views reports, adjusts balances
+## What's Been Implemented
 
-## Core Requirements (Static)
-- 18 casino games with provably fair (SHA-256) mechanics
-- JWT auth with role-based access control
-- Wallet with deposit/withdraw/transaction history
-- Admin dashboard with user management, game config, P&L reports, audit log
-- React frontend with game lobby, game play, wallet, profile, admin pages
-
-## What's Been Implemented (2026-03-28)
-### Phase 1 - MVP ✅
+### Phase 1 - MVP (2026-03-28) ✅
 - [x] JWT Authentication (register, login, logout, me, refresh)
 - [x] Role-based access (player, admin, super_admin)
-- [x] All 18 game engines with provably fair system
-  - Slots, Blackjack, Roulette, Crash, Mines, Poker, Craps, Sic Bo, Baccarat, Wheel of Fortune, Dragon Tiger, Video Poker, Hi-Lo, Plinko, Lottery, Teen Patti, Andar Bahar, Keno
+- [x] All 18 instant game engines with provably fair SHA-256
 - [x] Wallet system (balance, deposit, withdraw, transactions)
-- [x] Bet history with pagination and filtering
-- [x] Player profile with stats
-- [x] Loyalty points system
-- [x] Admin Dashboard (Overview, Users, Games, Bets, P&L, Audit tabs)
-- [x] Admin user management (search, status change, balance adjustment)
-- [x] Admin game configuration (enable/disable, house edge)
-- [x] Admin P&L reports (GGR, NGR, hold %, by game)
-- [x] Admin audit log
+- [x] Admin Dashboard (Overview, Users, Games, Bets, P&L, Audit)
 - [x] React frontend with dark neon theme
 - [x] Game lobby with search and category filters
-- [x] Individual game play pages with dynamic parameters
-- [x] Welcome bonus ($1,000 on registration)
+
+### Phase 2 - Full Backend (2026-03-28) ✅
+- [x] Interactive Game Sessions:
+  - Blackjack: hit, stand, double, split
+  - Mines: tile-by-tile reveal, cashout
+  - Poker: hold/draw
+  - Hi-Lo: chain guessing, cashout
+  - Crash: auto/manual cashout
+- [x] Sportsbook Betting Engine:
+  - 21 pre-seeded events across 6 sports
+  - Match winner, Over/Under, Handicap, Prop markets
+  - Single and parlay bet types
+  - Cash out functionality
+  - Odds in Decimal/Fractional/American formats
+- [x] Cricket Live Betting Module:
+  - 12 matches across 4 series (T20/ODI/TEST)
+  - 19 betting markets per match
+  - Full match simulation engine (ball-by-ball)
+  - Auto-settlement on simulation
+  - Admin market settle/void controls
+- [x] Jackpot/Progressive Pool System
+- [x] Provably Fair Verification Endpoint
+- [x] Enhanced Admin:
+  - Game result override, cancel/void
+  - Bulk void bets
+  - Withdrawal approval workflow
+  - User impersonation (read-only)
+  - Active sessions monitoring
+  - Cricket market settle/void
+  - Maintenance mode per game
+  - Activity reports
 
 ### Testing Status
-- Backend: 100% pass rate
-- Frontend: 85% pass rate (minor search fix applied)
+- Phase 1 Backend: 100% pass
+- Phase 2 Backend: 100% pass (35/35 tests)
 
 ## Prioritized Backlog
 
-### P0 (Critical - Next Phase)
-- [ ] Sportsbook betting engine (pre-match, live, parlays)
-- [ ] Cricket live betting module with CricAPI integration
-- [ ] WebSocket for real-time game updates
-- [ ] Interactive game UIs (Blackjack card visuals, Roulette wheel animation)
+### P0 (Next Phase)
+- [ ] Frontend pages for betting and cricket modules
+- [ ] WebSocket for real-time game/betting updates
+- [ ] Interactive game UI animations
 
 ### P1 (Important)
-- [ ] Two-Factor Authentication (2FA)
-- [ ] Password reset flow
+- [ ] 2FA for admins
 - [ ] Stripe payment integration
-- [ ] Crypto wallet integration
-- [ ] Withdrawal approval workflow
-- [ ] Bonus engine (wagering requirements, free spins)
-- [ ] VIP tier system automation
-- [ ] Affiliate system with commission tracking
+- [ ] Bonus engine (wagering requirements)
+- [ ] VIP tier automation
+- [ ] Affiliate system
 
 ### P2 (Enhancement)
-- [ ] Jackpot/progressive pool system
-- [ ] Responsible gambling tools (self-exclusion, limits)
-- [ ] AML transaction monitoring
-- [ ] Push notifications
-- [ ] Real-time admin activity feed (WebSocket)
-- [ ] Docker/Kubernetes deployment configs
-- [ ] CI/CD pipeline
-- [ ] Rate limiting per user
-- [ ] Session management across devices
-
-## Next Tasks
-1. Add WebSocket support for real-time game updates
-2. Build interactive game UIs (card animations, wheel spinning)
-3. Implement sportsbook betting engine
-4. Add Stripe payment integration
-5. Build cricket live betting with simulation engine
+- [ ] Responsible gambling tools
+- [ ] AML monitoring
+- [ ] Docker/K8s configs
+- [ ] Rate limiting
