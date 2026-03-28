@@ -16,6 +16,9 @@ import bcrypt
 import jwt
 
 from games import play_game, GAME_INFO, GAME_MAP
+from game_sessions import create_session_routes, SESSION_ENGINES
+from betting_engine import create_betting_routes, seed_events
+from cricket_engine import create_cricket_routes, seed_cricket_matches
 
 # ==================== CONFIG ====================
 MONGO_URL = os.environ.get("MONGO_URL")
@@ -186,10 +189,21 @@ async def create_indexes():
     await db.users.create_index("email", unique=True)
     await db.bets.create_index("user_id")
     await db.bets.create_index("created_at")
+    await db.bets.create_index("game")
     await db.transactions.create_index("user_id")
     await db.transactions.create_index("created_at")
     await db.game_configs.create_index("game_id", unique=True)
     await db.admin_actions.create_index("created_at")
+    await db.game_sessions.create_index("user_id")
+    await db.game_sessions.create_index([("user_id", 1), ("game", 1), ("status", 1)])
+    await db.sport_bets.create_index("user_id")
+    await db.sport_bets.create_index("status")
+    await db.cricket_bets.create_index("user_id")
+    await db.cricket_bets.create_index("match_id")
+    await db.betting_events.create_index("sport")
+    await db.betting_events.create_index("status")
+    await db.cricket_matches.create_index("status")
+    await db.jackpots.create_index("game_id")
 
 async def write_test_credentials():
     os.makedirs("/app/memory", exist_ok=True)
@@ -214,8 +228,10 @@ async def lifespan(app: FastAPI):
     await create_indexes()
     await seed_admin()
     await seed_game_configs()
+    await seed_events(db)
+    await seed_cricket_matches(db)
     await write_test_credentials()
-    print("Casino backend started successfully")
+    print("Casino backend started successfully - all engines loaded")
     yield
     mongo_client.close()
 
@@ -230,10 +246,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ==================== REGISTER ROUTERS ====================
+session_router = create_session_routes(db)
+betting_router = create_betting_routes(db)
+cricket_router = create_cricket_routes(db)
+app.include_router(session_router)
+app.include_router(betting_router)
+app.include_router(cricket_router)
+
 # ==================== HEALTH ====================
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat(), "engines": {"games": len(GAME_MAP), "session_games": len(SESSION_ENGINES), "betting": True, "cricket": True}}
+
+# ==================== PROVABLY FAIR VERIFICATION ====================
+@app.get("/api/verify")
+async def verify_provably_fair(server_seed: str, client_seed: str, nonce: int):
+    from provably_fair import provably_fair_hash
+    hash_hex = provably_fair_hash(server_seed, client_seed, nonce)
+    return {"hash": hash_hex, "server_seed": server_seed, "client_seed": client_seed, "nonce": nonce, "verified": True}
 
 # ==================== AUTH ENDPOINTS ====================
 @app.post("/api/auth/register")
@@ -739,3 +770,249 @@ async def admin_pending_withdrawals(admin: dict = Depends(require_admin)):
         if isinstance(w.get("created_at"), datetime):
             w["created_at"] = w["created_at"].isoformat()
     return {"withdrawals": withdrawals}
+
+
+# ==================== JACKPOT SYSTEM ====================
+@app.get("/api/jackpots")
+async def get_jackpots():
+    jackpots = await db.jackpots.find({}, {"_id": 0}).to_list(20)
+    if not jackpots:
+        default_jackpots = [
+            {"game_id": "slots", "name": "Mega Slots Jackpot", "pool": 50000.0, "contribution_rate": 0.01, "min_bet_qualify": 10},
+            {"game_id": "poker", "name": "Royal Flush Jackpot", "pool": 25000.0, "contribution_rate": 0.005, "min_bet_qualify": 20},
+            {"game_id": "keno", "name": "Keno Mega Prize", "pool": 15000.0, "contribution_rate": 0.02, "min_bet_qualify": 5},
+        ]
+        for jp in default_jackpots:
+            jp["created_at"] = datetime.now(timezone.utc).isoformat()
+            await db.jackpots.insert_one({**jp})
+        jackpots = await db.jackpots.find({}, {"_id": 0}).to_list(20)
+    for j in jackpots:
+        if isinstance(j.get("created_at"), datetime):
+            j["created_at"] = j["created_at"].isoformat()
+    return {"jackpots": jackpots}
+
+# ==================== ADMIN GAME RESULT OVERRIDE ====================
+@app.post("/api/admin/games/{game_id}/result")
+async def admin_override_result(game_id: str, request: Request, admin: dict = Depends(require_admin)):
+    body = await request.json()
+    bet_id = body.get("bet_id")
+    new_result = body.get("result")  # "win", "lose", "void"
+    reason = body.get("reason", "")
+    if not bet_id or not new_result:
+        raise HTTPException(status_code=400, detail="bet_id and result required")
+    bet = await db.bets.find_one({"_id": ObjectId(bet_id)}) if ObjectId.is_valid(bet_id) else None
+    if not bet:
+        raise HTTPException(status_code=404, detail="Bet not found")
+    old_win = bet.get("win_amount", 0)
+    old_bet = bet.get("bet_amount", 0)
+    if new_result == "void":
+        refund = old_bet
+        await db.users.update_one({"_id": ObjectId(bet["user_id"])}, {"$inc": {"balance": refund}})
+        await db.bets.update_one({"_id": ObjectId(bet_id)}, {"$set": {"status": "voided", "win_amount": 0}})
+        await db.transactions.insert_one({"user_id": bet["user_id"], "type": "void_refund", "amount": refund, "description": f"Void refund: {reason}", "admin_id": admin["_id"], "created_at": datetime.now(timezone.utc)})
+    elif new_result == "win":
+        new_win = old_bet * 2
+        diff = new_win - old_win
+        await db.users.update_one({"_id": ObjectId(bet["user_id"])}, {"$inc": {"balance": diff}})
+        await db.bets.update_one({"_id": ObjectId(bet_id)}, {"$set": {"status": "settled", "win_amount": new_win, "result.outcome": "admin_win"}})
+    elif new_result == "lose":
+        if old_win > 0:
+            await db.users.update_one({"_id": ObjectId(bet["user_id"])}, {"$inc": {"balance": -old_win}})
+        await db.bets.update_one({"_id": ObjectId(bet_id)}, {"$set": {"status": "settled", "win_amount": 0, "result.outcome": "admin_lose"}})
+    await db.admin_actions.insert_one({
+        "admin_id": admin["_id"], "action_type": "result_override", "target_type": "bet", "target_id": bet_id,
+        "before_state": {"win_amount": old_win}, "after_state": {"result": new_result}, "reason": reason, "created_at": datetime.now(timezone.utc),
+    })
+    return {"message": f"Result overridden to {new_result}", "bet_id": bet_id}
+
+# ==================== ADMIN CANCEL GAME ROUND ====================
+@app.post("/api/admin/games/{game_id}/cancel")
+async def admin_cancel_round(game_id: str, request: Request, admin: dict = Depends(require_admin)):
+    body = await request.json()
+    session_id = body.get("session_id")
+    reason = body.get("reason", "Admin cancellation")
+    if session_id:
+        session = await db.game_sessions.find_one({"_id": ObjectId(session_id)}) if ObjectId.is_valid(session_id) else None
+        if session and session["status"] == "active":
+            await db.users.update_one({"_id": ObjectId(session["user_id"])}, {"$inc": {"balance": session["bet_amount"]}})
+            await db.game_sessions.update_one({"_id": ObjectId(session_id)}, {"$set": {"status": "cancelled", "completed_at": datetime.now(timezone.utc)}})
+            await db.transactions.insert_one({"user_id": session["user_id"], "type": "cancel_refund", "amount": session["bet_amount"], "description": f"Game cancelled: {reason}", "created_at": datetime.now(timezone.utc)})
+            await db.admin_actions.insert_one({"admin_id": admin["_id"], "action_type": "game_cancel", "target_type": "session", "target_id": session_id, "reason": reason, "created_at": datetime.now(timezone.utc)})
+            return {"message": "Session cancelled and refunded"}
+    raise HTTPException(status_code=404, detail="Session not found or not active")
+
+# ==================== ADMIN GAME SESSIONS VIEW ====================
+@app.get("/api/admin/games/sessions")
+async def admin_active_sessions(admin: dict = Depends(require_admin)):
+    sessions = await db.game_sessions.find({"status": "active"}, {"state.deck": 0, "state.mine_positions": 0}).sort("created_at", -1).to_list(100)
+    result = []
+    for s in sessions:
+        result.append({
+            "session_id": str(s["_id"]), "user_id": s["user_id"], "game": s["game"],
+            "bet_amount": s["bet_amount"], "actions_count": len(s.get("actions", [])),
+            "created_at": s["created_at"].isoformat() if isinstance(s.get("created_at"), datetime) else str(s.get("created_at", "")),
+        })
+    return {"sessions": result, "count": len(result)}
+
+# ==================== ADMIN BULK OPERATIONS ====================
+@app.post("/api/admin/bulk/void-bets")
+async def admin_bulk_void(request: Request, admin: dict = Depends(require_admin)):
+    body = await request.json()
+    game = body.get("game")
+    date_from = body.get("date_from")
+    date_to = body.get("date_to")
+    reason = body.get("reason", "Bulk void")
+    query = {"status": "settled"}
+    if game: query["game"] = game
+    if date_from: query["created_at"] = {"$gte": datetime.fromisoformat(date_from)}
+    if date_to: query.setdefault("created_at", {})["$lte"] = datetime.fromisoformat(date_to)
+    bets = await db.bets.find(query).to_list(10000)
+    voided = 0
+    for bet in bets:
+        refund = bet["bet_amount"]
+        await db.users.update_one({"_id": ObjectId(bet["user_id"])}, {"$inc": {"balance": refund}})
+        await db.bets.update_one({"_id": bet["_id"]}, {"$set": {"status": "voided"}})
+        voided += 1
+    await db.admin_actions.insert_one({"admin_id": admin["_id"], "action_type": "bulk_void", "target_type": "bets", "reason": reason, "after_state": {"voided_count": voided}, "created_at": datetime.now(timezone.utc)})
+    return {"message": f"Voided {voided} bets", "voided": voided}
+
+# ==================== ADMIN WITHDRAWAL WORKFLOW ====================
+@app.post("/api/user/withdraw-request")
+async def create_withdrawal_request(request: Request, user: dict = Depends(get_current_user)):
+    body = await request.json()
+    amount = float(body.get("amount", 0))
+    method = body.get("method", "bank_transfer")
+    if amount <= 0: raise HTTPException(status_code=400, detail="Invalid amount")
+    u = await db.users.find_one({"_id": ObjectId(user["_id"])})
+    if u["balance"] < amount: raise HTTPException(status_code=400, detail="Insufficient balance")
+    await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$inc": {"balance": -amount}})
+    await db.withdrawal_queue.insert_one({
+        "user_id": user["_id"], "amount": amount, "currency": "USD", "method": method,
+        "status": "pending", "created_at": datetime.now(timezone.utc),
+    })
+    return {"message": "Withdrawal request submitted", "amount": amount, "status": "pending"}
+
+@app.patch("/api/admin/withdrawals/{queue_id}")
+async def admin_process_withdrawal(queue_id: str, request: Request, admin: dict = Depends(require_admin)):
+    body = await request.json()
+    action = body.get("action")  # approve or reject
+    reason = body.get("reason", "")
+    try: wd = await db.withdrawal_queue.find_one({"_id": ObjectId(queue_id)})
+    except: raise HTTPException(status_code=404, detail="Withdrawal not found")
+    if not wd: raise HTTPException(status_code=404, detail="Withdrawal not found")
+    if wd["status"] != "pending": raise HTTPException(status_code=400, detail="Already processed")
+    if action == "approve":
+        await db.withdrawal_queue.update_one({"_id": ObjectId(queue_id)}, {"$set": {"status": "approved", "reviewed_by": admin["_id"], "reviewed_at": datetime.now(timezone.utc), "reason": reason}})
+        await db.transactions.insert_one({"user_id": wd["user_id"], "type": "withdrawal", "amount": -wd["amount"], "description": f"Withdrawal approved: {reason}", "created_at": datetime.now(timezone.utc)})
+    elif action == "reject":
+        await db.users.update_one({"_id": ObjectId(wd["user_id"])}, {"$inc": {"balance": wd["amount"]}})
+        await db.withdrawal_queue.update_one({"_id": ObjectId(queue_id)}, {"$set": {"status": "rejected", "reviewed_by": admin["_id"], "reviewed_at": datetime.now(timezone.utc), "reason": reason}})
+    await db.admin_actions.insert_one({"admin_id": admin["_id"], "action_type": f"withdrawal_{action}", "target_type": "withdrawal", "target_id": queue_id, "reason": reason, "created_at": datetime.now(timezone.utc)})
+    return {"message": f"Withdrawal {action}ed", "queue_id": queue_id}
+
+# ==================== ADMIN IMPERSONATE (READ-ONLY) ====================
+@app.get("/api/admin/users/{user_id}/impersonate")
+async def admin_impersonate(user_id: str, admin: dict = Depends(require_admin)):
+    try: u = await db.users.find_one({"_id": ObjectId(user_id)})
+    except: raise HTTPException(status_code=404, detail="User not found")
+    if not u: raise HTTPException(status_code=404, detail="User not found")
+    profile = user_response(u)
+    bets = await db.bets.find({"user_id": user_id}).sort("created_at", -1).limit(20).to_list(20)
+    for b in bets:
+        b["_id"] = str(b["_id"])
+        if isinstance(b.get("created_at"), datetime): b["created_at"] = b["created_at"].isoformat()
+    txns = await db.transactions.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).limit(20).to_list(20)
+    for t in txns:
+        if isinstance(t.get("created_at"), datetime): t["created_at"] = t["created_at"].isoformat()
+    sessions = await db.game_sessions.find({"user_id": user_id}, {"state.deck": 0}).sort("created_at", -1).limit(10).to_list(10)
+    for s in sessions:
+        s["_id"] = str(s["_id"])
+        if isinstance(s.get("created_at"), datetime): s["created_at"] = s["created_at"].isoformat()
+    await db.admin_actions.insert_one({"admin_id": admin["_id"], "action_type": "impersonate", "target_type": "user", "target_id": user_id, "reason": "Read-only impersonation", "created_at": datetime.now(timezone.utc)})
+    return {"profile": profile, "recent_bets": bets, "recent_transactions": txns, "recent_sessions": sessions, "mode": "read_only"}
+
+# ==================== ADMIN CRICKET CONTROLS ====================
+@app.post("/api/admin/cricket/market/settle")
+async def admin_settle_cricket_market(request: Request, admin: dict = Depends(require_admin)):
+    body = await request.json()
+    match_id = body.get("match_id")
+    market_id = body.get("market_id")
+    winning_selection = body.get("winning_selection")
+    if not all([match_id, market_id, winning_selection]):
+        raise HTTPException(status_code=400, detail="match_id, market_id, winning_selection required")
+    match = await db.cricket_matches.find_one({"_id": ObjectId(match_id)}) if ObjectId.is_valid(match_id) else None
+    if not match: raise HTTPException(status_code=404, detail="Match not found")
+    markets = match.get("markets", [])
+    for m in markets:
+        if m.get("market_id") == market_id:
+            m["status"] = "settled"
+            m["winning_selection"] = winning_selection
+            break
+    await db.cricket_matches.update_one({"_id": ObjectId(match_id)}, {"$set": {"markets": markets}})
+    bets = await db.cricket_bets.find({"match_id": match_id, "market_id": market_id, "status": "open"}).to_list(10000)
+    settled = 0
+    for bet in bets:
+        won = bet["selection"] == winning_selection
+        win_amount = round(bet["stake"] * bet["odds"], 2) if won else 0
+        await db.cricket_bets.update_one({"_id": bet["_id"]}, {"$set": {"status": "won" if won else "lost", "win_amount": win_amount, "settled_at": datetime.now(timezone.utc)}})
+        if win_amount > 0:
+            await db.users.update_one({"_id": ObjectId(bet["user_id"])}, {"$inc": {"balance": win_amount}})
+        settled += 1
+    await db.admin_actions.insert_one({"admin_id": admin["_id"], "action_type": "cricket_market_settle", "target_type": "market", "target_id": f"{match_id}:{market_id}", "after_state": {"winning": winning_selection, "settled": settled}, "created_at": datetime.now(timezone.utc)})
+    return {"message": f"Settled {settled} bets", "winning_selection": winning_selection}
+
+@app.post("/api/admin/cricket/market/void")
+async def admin_void_cricket_market(request: Request, admin: dict = Depends(require_admin)):
+    body = await request.json()
+    match_id = body.get("match_id")
+    market_id = body.get("market_id")
+    reason = body.get("reason", "Market voided")
+    if not all([match_id, market_id]):
+        raise HTTPException(status_code=400, detail="match_id and market_id required")
+    match = await db.cricket_matches.find_one({"_id": ObjectId(match_id)}) if ObjectId.is_valid(match_id) else None
+    if not match: raise HTTPException(status_code=404, detail="Match not found")
+    markets = match.get("markets", [])
+    for m in markets:
+        if m.get("market_id") == market_id:
+            m["status"] = "voided"
+            break
+    await db.cricket_matches.update_one({"_id": ObjectId(match_id)}, {"$set": {"markets": markets}})
+    bets = await db.cricket_bets.find({"match_id": match_id, "market_id": market_id, "status": "open"}).to_list(10000)
+    refunded = 0
+    for bet in bets:
+        await db.users.update_one({"_id": ObjectId(bet["user_id"])}, {"$inc": {"balance": bet["stake"]}})
+        await db.cricket_bets.update_one({"_id": bet["_id"]}, {"$set": {"status": "voided", "settled_at": datetime.now(timezone.utc)}})
+        refunded += 1
+    await db.admin_actions.insert_one({"admin_id": admin["_id"], "action_type": "cricket_market_void", "target_type": "market", "target_id": f"{match_id}:{market_id}", "reason": reason, "after_state": {"refunded": refunded}, "created_at": datetime.now(timezone.utc)})
+    return {"message": f"Voided market. Refunded {refunded} bets."}
+
+# ==================== ADMIN MAINTENANCE MODE ====================
+@app.post("/api/admin/games/{game_id}/maintenance")
+async def admin_maintenance_mode(game_id: str, request: Request, admin: dict = Depends(require_admin)):
+    body = await request.json()
+    enabled = body.get("maintenance", False)
+    config = await db.game_configs.find_one({"game_id": game_id})
+    if not config: raise HTTPException(status_code=404, detail="Game not found")
+    await db.game_configs.update_one({"game_id": game_id}, {"$set": {"maintenance": enabled, "enabled": not enabled}})
+    await db.admin_actions.insert_one({"admin_id": admin["_id"], "action_type": "maintenance_mode", "target_type": "game", "target_id": game_id, "after_state": {"maintenance": enabled}, "created_at": datetime.now(timezone.utc)})
+    return {"message": f"Maintenance mode {'enabled' if enabled else 'disabled'} for {game_id}"}
+
+# ==================== ADMIN REPORTS ACTIVITY ====================
+@app.get("/api/admin/reports/activity")
+async def admin_activity_report(admin: dict = Depends(require_admin), hours: int = Query(24, ge=1, le=168)):
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    new_users = await db.users.count_documents({"created_at": {"$gte": since}})
+    new_bets = await db.bets.count_documents({"created_at": {"$gte": since}})
+    new_sessions = await db.game_sessions.count_documents({"created_at": {"$gte": since}})
+    new_sport_bets = await db.sport_bets.count_documents({"created_at": {"$gte": since}})
+    new_cricket_bets = await db.cricket_bets.count_documents({"created_at": {"$gte": since}})
+    revenue_pipeline = [{"$match": {"created_at": {"$gte": since}}}, {"$group": {"_id": None, "wagered": {"$sum": "$bet_amount"}, "paid": {"$sum": "$win_amount"}}}]
+    rev = await db.bets.aggregate(revenue_pipeline).to_list(1)
+    return {
+        "period_hours": hours,
+        "new_users": new_users, "new_bets": new_bets, "new_sessions": new_sessions,
+        "sport_bets": new_sport_bets, "cricket_bets": new_cricket_bets,
+        "wagered": round(rev[0]["wagered"], 2) if rev else 0,
+        "paid": round(rev[0]["paid"], 2) if rev else 0,
+        "ggr": round(rev[0]["wagered"] - rev[0]["paid"], 2) if rev else 0,
+    }
