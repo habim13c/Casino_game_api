@@ -36,7 +36,13 @@ export default function GameLobby() {
   }, []);
 
   const filtered = games.filter(g => {
-    if (search && !g.name?.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      const nameMatch = (g.name || '').toLowerCase().includes(s);
+      const idMatch = (g.game_id || '').toLowerCase().includes(s);
+      const catMatch = (g.category || '').toLowerCase().includes(s);
+      if (!nameMatch && !idMatch && !catMatch) return false;
+    }
     if (category !== 'all' && g.category !== category) return false;
     return g.enabled !== false;
   });
